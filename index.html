@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>ESP32 Smart Car Dashboard — Rohan Netane</title>
+<meta name="description" content="Live MQTT dashboard for an ESP32 smart car — GPS map, camera stream, telemetry and multi-mode control." />
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- Leaflet (map) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+<!-- Styles -->
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ============================== LOADING SCREEN ============================== -->
+<div class="loading-screen" id="loading-screen">
+  <div class="loading-ring"></div>
+  <div class="loading-text">BOOTING <span>ESP32 SMART CAR</span> DASHBOARD</div>
+</div>
+
+<!-- ============================== APP SHELL ============================== -->
+<div class="app" id="app">
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="brand">
+      <div class="brand-mark">ESP32 <span>SMART CAR</span></div>
+      <div class="brand-sub">DASHBOARD // ROHAN NETANE</div>
+    </div>
+
+    <div class="status-strip">
+      <div class="chip" id="wifi-status" data-state="offline">
+        <span class="chip-dot"></span><span class="chip-label">WIFI OFFLINE</span>
+      </div>
+      <div class="chip" id="mqtt-status" data-state="offline">
+        <span class="chip-dot"></span><span class="chip-label">MQTT OFFLINE</span>
+      </div>
+      <div class="chip" id="gps-status" data-state="offline">
+        <span class="chip-dot"></span><span class="chip-label">GPS OFFLINE</span>
+      </div>
+      <div class="chip" id="camera-status" data-state="offline">
+        <span class="chip-dot"></span><span class="chip-label">CAM OFFLINE</span>
+      </div>
+      <div class="chip" id="esp32-status" data-state="offline">
+        <span class="chip-dot"></span><span class="chip-label">ESP32 UNKNOWN</span>
+      </div>
+      <div class="chip" id="conn-quality" data-level="none">
+        <span class="chip-label">SIGNAL: NONE</span>
+      </div>
+      <div class="command-chip">CMD: <span id="current-command">—</span></div>
+    </div>
+  </header>
+
+  <!-- MAIN GRID -->
+  <div class="grid">
+
+    <!-- ============================ LEFT COLUMN ============================ -->
+    <div class="col">
+
+      <!-- MAP PANEL -->
+      <section class="panel" id="map-panel">
+        <div class="panel-head">
+          <div class="panel-title">Live GPS Map</div>
+          <div class="panel-actions">
+            <button class="icon-btn map-btn map-btn--active" id="btn-auto-follow" title="Toggle auto-follow">
+              <span class="map-btn-label">Auto-Follow: ON</span>
+            </button>
+            <button class="icon-btn" id="btn-reset-view" title="Reset view">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v6h6"/></svg>
+            </button>
+            <button class="icon-btn" id="btn-map-fullscreen" title="Fullscreen">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="map"></div>
+      </section>
+
+      <!-- CAMERA PANEL -->
+      <section class="panel" id="camera-panel">
+        <div class="panel-head">
+          <div class="panel-title">ESP32-CAM Live Stream</div>
+          <div class="panel-actions">
+            <button class="icon-btn" id="btn-camera-snapshot" title="Take snapshot">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"/><circle cx="12" cy="13" r="4"/></svg>
+            </button>
+            <button class="icon-btn" id="btn-camera-fullscreen" title="Fullscreen">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="camera-view">
+          <img id="camera-stream" alt="ESP32-CAM live stream" />
+          <div class="camera-corner-frame"></div>
+          <div class="camera-overlay camera-overlay--loading" id="camera-loading">
+            <div class="scan-line"></div>
+            <div>ACQUIRING SIGNAL…</div>
+          </div>
+          <div class="camera-overlay" id="camera-offline">
+            <div>⚠ CAMERA OFFLINE</div>
+            <div>Retrying connection…</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CONTROL PANEL -->
+      <section class="panel" id="control-panel">
+        <div class="panel-head">
+          <div class="panel-title">Control Panel</div>
+        </div>
+        <div class="control-grid">
+          <div class="control-col">
+            <div class="dpad">
+              <button class="ctrl-btn ctrl-btn--forward" data-command="forward" title="Forward (W / ↑)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+              </button>
+              <button class="ctrl-btn ctrl-btn--left" data-command="left" title="Left (A / ←)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+              </button>
+              <button class="ctrl-btn ctrl-btn--stop" data-command="stop" title="Stop (Space)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+              </button>
+              <button class="ctrl-btn ctrl-btn--right" data-command="right" title="Right (D / →)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </button>
+              <button class="ctrl-btn ctrl-btn--backward" data-command="backward" title="Backward (S / ↓)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+              </button>
+            </div>
+            <button class="emergency-stop-btn" id="btn-emergency-stop">⛔ EMERGENCY STOP</button>
+            <div class="control-hint">Keyboard: W A S D · Arrow Keys · Space = Stop</div>
+          </div>
+
+          <div class="control-col">
+            <div class="joystick-base" id="joystick-base">
+              <div class="joystick-handle" id="joystick-handle"></div>
+            </div>
+            <div class="control-hint">Virtual Joystick · Mouse or Touch</div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ============================ RIGHT COLUMN ============================ -->
+    <div class="col">
+
+      <!-- SPEED + BATTERY -->
+      <div class="gauge-battery-row">
+
+        <section class="panel" id="speed-panel">
+          <div class="panel-head"><div class="panel-title">Speed</div></div>
+          <div class="gauge-body">
+            <svg class="gauge-svg" viewBox="0 0 200 140" id="speed-gauge">
+              <!-- Tick marks -->
+              <g stroke="#1e2a38" stroke-width="2">
+                <path d="M20,110 A80,80 0 0 1 180,110" fill="none" stroke="#1e2a38" stroke-width="6"/>
+              </g>
+              <g id="gauge-ticks" stroke="#2dd4f5" stroke-width="2" opacity="0.6"></g>
+              <!-- Needle pivot at (100,100) -->
+              <g id="speed-needle" transform="rotate(-120 100 100)">
+                <line x1="100" y1="100" x2="100" y2="34" stroke="#ffb020" stroke-width="3" stroke-linecap="round"/>
+                <circle cx="100" cy="100" r="6" fill="#ffb020"/>
+              </g>
+            </svg>
+            <div class="gauge-digital"><span id="speed-digital">0</span></div>
+            <div class="gauge-unit">KM/H</div>
+            <div class="speed-slider-row">
+              <input type="range" id="speed-slider" min="0" max="100" value="50" />
+              <span class="value" id="speed-slider-value">50</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="battery-panel">
+          <div class="panel-head"><div class="panel-title">Battery</div></div>
+          <div class="battery-body">
+            <div class="battery-visual">
+              <div class="battery-shell" id="battery-icon">
+                <div class="battery-fill battery--red" id="battery-fill" style="width:0%"></div>
+                <div class="battery-bolt" id="battery-bolt">⚡</div>
+              </div>
+              <div class="battery-percent-text" id="battery-percent-text">0%</div>
+            </div>
+            <div class="battery-warning" id="battery-warning">
+              <span>⚠</span><span>LOW BATTERY — RETURN TO BASE</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- GPS DATA PANEL -->
+      <section class="panel" id="gps-panel">
+        <div class="panel-head"><div class="panel-title">GPS Telemetry</div></div>
+        <div class="gps-grid">
+          <div class="gps-item"><span class="gps-label">Latitude</span><span class="gps-value" id="gps-lat">—</span></div>
+          <div class="gps-item"><span class="gps-label">Longitude</span><span class="gps-value" id="gps-lng">—</span></div>
+          <div class="gps-item"><span class="gps-label">Speed</span><span class="gps-value" id="gps-speed-kmh">0.0</span></div>
+          <div class="gps-item"><span class="gps-label">Time (UTC)</span><span class="gps-value" id="gps-time">—</span></div>
+          <div class="gps-item"><span class="gps-label">Satellites</span><span class="gps-value" id="gps-sats">0</span></div>
+          <div class="gps-item"><span class="gps-label">Fix</span><span class="gps-value" id="gps-fix" data-state="offline">NO FIX</span></div>
+        </div>
+      </section>
+
+      <!-- GESTURE + VOICE -->
+      <div class="side-controls-row">
+        <section class="panel" id="gesture-panel">
+          <div class="panel-head"><div class="panel-title">Hand Gesture</div></div>
+          <div class="gesture-body">
+            <div class="gesture-feed-wrap">
+              <video id="gesture-video" playsinline></video>
+              <canvas id="gesture-canvas" width="320" height="240"></canvas>
+              <div class="gesture-label-badge" id="gesture-label">STOPPED</div>
+            </div>
+            <div class="btn-row">
+              <button class="btn-pill" id="btn-gesture-start">Start Gesture</button>
+              <button class="btn-pill btn-pill--stop" id="btn-gesture-stop" disabled>Stop Gesture</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="voice-panel">
+          <div class="panel-head"><div class="panel-title">Voice Control</div></div>
+          <div class="voice-body">
+            <div class="voice-visual" id="voice-transcript">Voice control idle</div>
+            <div class="btn-row">
+              <button class="btn-pill" id="btn-voice-start">Start Voice</button>
+              <button class="btn-pill btn-pill--stop" id="btn-voice-stop" disabled>Stop Voice</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+    </div>
+  </div>
+
+  <footer class="footer">ESP32 SMART CAR DASHBOARD · Built by <span>Rohan Netane</span> · MQTT / Leaflet / OpenStreetMap</footer>
+</div>
+
+<div class="toast-container" id="toast-container"></div>
+
+<!-- ============================== SCRIPTS ============================== -->
+<!-- Leaflet -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- MQTT.js (browser build, MQTT over WebSockets) -->
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<!-- MediaPipe Hands (gesture control) -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<!-- App code -->
+<script src="config.js"></script>
+<script src="mqtt.js"></script>
+<script src="map.js"></script>
+<script src="script.js"></script>
+
+<script>
+  // Draw the speed gauge tick marks once at load (0..MAX_KMH in 10 steps).
+  (function drawGaugeTicks() {
+    const ticksGroup = document.getElementById("gauge-ticks");
+    const steps = 10;
+    const startAngle = -120;
+    const endAngle = 120;
+    const cx = 100, cy = 100, rOuter = 78, rInner = 68;
+
+    for (let i = 0; i <= steps; i++) {
+      const angleDeg = startAngle + (i / steps) * (endAngle - startAngle);
+      const angleRad = (angleDeg - 90) * (Math.PI / 180);
+      const x1 = cx + rInner * Math.cos(angleRad);
+      const y1 = cy + rInner * Math.sin(angleRad);
+      const x2 = cx + rOuter * Math.cos(angleRad);
+      const y2 = cy + rOuter * Math.sin(angleRad);
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", x1.toFixed(2));
+      line.setAttribute("y1", y1.toFixed(2));
+      line.setAttribute("x2", x2.toFixed(2));
+      line.setAttribute("y2", y2.toFixed(2));
+      ticksGroup.appendChild(line);
+    }
+  })();
+</script>
+</body>
+</html>
