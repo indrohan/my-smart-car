@@ -34,12 +34,12 @@ window.CAR_CONFIG = {
   // MQTT BROKER (HiveMQ Cloud — MQTT over Secure WebSockets)
   // ---------------------------------------------------------------------
   MQTT: {
-    HOST: "a1b554412037410aa86cb8f058a66112.s1.eu.hivemq.cloud",
+    HOST: "****************************************************************",
     PORT: 8884,                     // WebSocket Secure (WSS) port
     PROTOCOL: "wss",                // wss = MQTT over TLS WebSocket
     PATH: "/mqtt",                  // HiveMQ Cloud WebSocket path
-    USERNAME: "rohan_netane",
-    PASSWORD: "Rohan@123",
+    USERNAME: "*************************************",
+    PASSWORD: "****************************************",
     CLIENT_ID_PREFIX: "esp32-dashboard-",   // a random suffix is appended at runtime
     CLEAN_SESSION: true,
     KEEPALIVE_SECONDS: 30,
